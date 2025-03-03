@@ -15,6 +15,8 @@
 #include <ew/transform.h>
 #include <ew/texture.h>
 
+#include "anim.h"
+
 GLFWwindow* initWindow(const char* title, int width, int height);
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 void resetCamera(ew::Camera* camera, ew::CameraController* controller);
@@ -48,8 +50,10 @@ float lightPos[3] = { 1.0f, 5.0f, 1.0f };
 float lightColor[3] = { 1.0f, 1.0f, 1.0f };
 float maxBias = 0.05, minBias = 0.005;
 
+Animator animator;
+
 int main() {
-	GLFWwindow* window = initWindow("Assignment 2", screenWidth, screenHeight);
+	GLFWwindow* window = initWindow("Assignment 4", screenWidth, screenHeight);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	// OpenGL setup
@@ -87,6 +91,10 @@ int main() {
 	GLuint monkeyTexture = ew::loadTexture("assets/PavingStones143_1K-JPG_Color.jpg");
 		//GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
 
+	// animation setup
+	animator.clip = new AnimationClip;
+	animator.target = &monkeyTransform;
+
 	// render loop //
 	while(!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -99,7 +107,7 @@ int main() {
 		cameraController.move(window, &camera, deltaTime); // cam control before actually using camera for anything
 
 		// Rotate model around Y axis
-		monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
+		//monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
 
 		// Bind brick texture to texture unit 0
 		glBindTextureUnit(0, monkeyTexture);
@@ -172,6 +180,8 @@ int main() {
 		glfwSwapBuffers(window);
 	}
 
+	delete animator.clip;
+	//delete animator.target; // can't delete monkeyTransform (not created with new)
 	glfwTerminate();
 	printf("\nShutting down...");
 	return 0;
@@ -338,6 +348,8 @@ void resetCamera(ew::Camera* camera, ew::CameraController* controller) {
 	controller->yaw = controller->pitch = 0;
 }
 
+bool tempBool;
+
 void drawUI() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui_ImplOpenGL3_NewFrame();
@@ -361,6 +373,70 @@ void drawUI() {
 	if(ImGui::CollapsingHeader("Shadow")) {
 		ImGui::SliderFloat("Max Bias", &maxBias, 0.05, 0.2);
 		ImGui::SliderFloat("Min Bias", &minBias, 0.001, maxBias);
+	}
+
+	// animation stuff (assignment 4)
+	animator.clip->EnsureAscendingTimes();
+
+	if(ImGui::CollapsingHeader("Animation")) {
+		ImGui::Checkbox("temp", &tempBool);
+	}
+	if(ImGui::CollapsingHeader("Position Keyframes")) {
+		for(int i = 0; i < animator.clip->posKeys.size(); i++) {
+			ImGui::PushID(i);
+
+			ImGui::Text("Position " + i);
+			ImGui::SliderFloat("Time", &animator.clip->posKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
+			ImGui::DragFloat3("Values", animator.clip->posKeys[i].values);
+			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
+
+			ImGui::PopID();
+		}
+
+		if(ImGui::Button("Add keyframe")) {
+			animator.clip->AddKeyframe(POS);
+		}
+		if(ImGui::Button("Remove last keyframe")) {
+			animator.clip->RemoveLastKeyframe(POS);
+		}
+	}
+	if(ImGui::CollapsingHeader("Rotation Keyframes")) {
+		for(int i = 0; i < animator.clip->rotKeys.size(); i++) {
+			ImGui::PushID(i);
+
+			ImGui::Text("Rotation " + i);
+			ImGui::SliderFloat("Time", &animator.clip->rotKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
+			ImGui::DragFloat3("Values", animator.clip->rotKeys[i].values);
+			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
+
+			ImGui::PopID();
+		}
+
+		if(ImGui::Button("Add keyframe")) {
+			animator.clip->AddKeyframe(ROT);
+		}
+		if(ImGui::Button("Remove last keyframe")) {
+			animator.clip->RemoveLastKeyframe(ROT);
+		}
+	}
+	if(ImGui::CollapsingHeader("Scale Keyframes")) {
+		for(int i = 0; i < animator.clip->scaKeys.size(); i++) {
+			ImGui::PushID(i);
+
+			ImGui::Text("Scale " + i);
+			ImGui::SliderFloat("Time", &animator.clip->scaKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
+			ImGui::DragFloat3("Values", animator.clip->scaKeys[i].values);
+			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
+
+			ImGui::PopID();
+		}
+
+		if(ImGui::Button("Add keyframe")) {
+			animator.clip->AddKeyframe(SCA);
+		}
+		if(ImGui::Button("Remove last keyframe")) {
+			animator.clip->RemoveLastKeyframe(SCA);
+		}
 	}
 
 	ImGui::Begin("Shadow Map");
