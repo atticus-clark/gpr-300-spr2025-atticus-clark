@@ -116,6 +116,8 @@ int main() {
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		animator.PlayClip(deltaTime);
+
 		// ----- 1) render depth of scene to texture (from light's perspective) ----- //
 
 		/* code taken from the LearnOpenGL tutorial on Shadow Mapping
@@ -348,8 +350,6 @@ void resetCamera(ew::Camera* camera, ew::CameraController* controller) {
 	controller->yaw = controller->pitch = 0;
 }
 
-bool tempBool;
-
 void drawUI() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui_ImplOpenGL3_NewFrame();
@@ -379,15 +379,23 @@ void drawUI() {
 	animator.clip->EnsureAscendingTimes();
 
 	if(ImGui::CollapsingHeader("Animation")) {
-		ImGui::Checkbox("temp", &tempBool);
+		ImGui::Checkbox("Playing", &animator.isPlaying);
+		ImGui::Checkbox("Looping", &animator.isLooping);
+		ImGui::DragFloat("Playback Speed", &animator.playbackSpeed);
+		ImGui::SliderFloat("Playback Time", &animator.playbackTime, 0.0f, animator.clip->duration);
+		ImGui::DragFloat("Clip Duration", &animator.clip->duration, 0.1f, 0.0f);
 	}
+
+	int id = 0;
 	if(ImGui::CollapsingHeader("Position Keyframes")) {
 		for(int i = 0; i < animator.clip->posKeys.size(); i++) {
-			ImGui::PushID(i);
+			ImGui::PushID(id);
+			id++;
 
-			ImGui::Text("Position " + i);
-			ImGui::SliderFloat("Time", &animator.clip->posKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
-			ImGui::DragFloat3("Values", animator.clip->posKeys[i].values);
+			std::string text = "Position " + std::to_string(i);
+			ImGui::Text(text.data());
+			ImGui::SliderFloat("Time", &animator.clip->posKeys[i].time, 0.0f, animator.clip->duration);
+			ImGui::DragFloat3("Values", &animator.clip->posKeys[i].values.x, 0.1f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();
@@ -402,11 +410,13 @@ void drawUI() {
 	}
 	if(ImGui::CollapsingHeader("Rotation Keyframes")) {
 		for(int i = 0; i < animator.clip->rotKeys.size(); i++) {
-			ImGui::PushID(i);
+			ImGui::PushID(id);
+			id++;
 
-			ImGui::Text("Rotation " + i);
-			ImGui::SliderFloat("Time", &animator.clip->rotKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
-			ImGui::DragFloat3("Values", animator.clip->rotKeys[i].values);
+			std::string text = "Rotation " + std::to_string(i);
+			ImGui::Text(text.data());
+			ImGui::SliderFloat("Time", &animator.clip->rotKeys[i].time, 0.0f, animator.clip->duration);
+			ImGui::DragFloat3("Values", &animator.clip->rotKeys[i].values.x, 0.1f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();
@@ -421,11 +431,13 @@ void drawUI() {
 	}
 	if(ImGui::CollapsingHeader("Scale Keyframes")) {
 		for(int i = 0; i < animator.clip->scaKeys.size(); i++) {
-			ImGui::PushID(i);
+			ImGui::PushID(id);
+			id++;
 
-			ImGui::Text("Scale " + i);
-			ImGui::SliderFloat("Time", &animator.clip->scaKeys[i].time, 0.0f, 1.0f); // replace 1.0 with Animator duration
-			ImGui::DragFloat3("Values", animator.clip->scaKeys[i].values);
+			std::string text = "Scale " + std::to_string(i);
+			ImGui::Text(text.data());
+			ImGui::SliderFloat("Time", &animator.clip->scaKeys[i].time, 0.0f, animator.clip->duration);
+			ImGui::DragFloat3("Values", &animator.clip->scaKeys[i].values.x, 0.1f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();

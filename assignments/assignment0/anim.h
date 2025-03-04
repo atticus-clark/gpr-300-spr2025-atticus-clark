@@ -1,5 +1,24 @@
 #include <vector>
+#include <cmath>
 #include <ew/transform.h>
+
+static class Util {
+public:
+	static glm::vec3 Lerp3(const glm::vec3 A, const glm::vec3 B, float t) {
+		// clamp percentage
+		if(t < 0.0f) { t = 0.0f; }
+		else if(t > 1.0f) { t = 1.0f; }
+
+		glm::vec3 output;
+		output.x = A.x + (B.x - A.x) * t;
+		output.y = A.y + (B.y - A.y) * t;
+		output.z = A.z + (B.z - A.z) * t;
+
+		return output;
+	}
+
+	static float InvLerp(const float A, const float B, const float x) { return (x - A) / (B - A); }
+};
 
 enum KeyType {
 	POS = 0,
@@ -11,7 +30,7 @@ enum KeyType {
 
 struct Keyframe3 {
 	float time = 0.0f;
-	float values[3] = {0.0f, 0.0f, 0.0f};
+	glm::vec3 values;
 };
 
 class AnimationClip {
@@ -32,6 +51,7 @@ public:
 			return &rotKeys.back();
 		case SCA:
 			scaKeys.push_back(Keyframe3());
+			scaKeys.back().values = glm::vec3(1.0f, 1.0f, 1.0f);
 			return &scaKeys.back();
 		default: // invalid type
 			return NULL;
@@ -68,6 +88,8 @@ public:
 		for(int i = 1; i < scaKeys.size(); i++) {
 			if(scaKeys[i - 1].time > scaKeys[i].time) { scaKeys[i].time = scaKeys[i - 1].time; }
 		}
+
+		return;
 	}
 };
 
@@ -80,37 +102,70 @@ public:
 	float playbackSpeed = 1.0f; // 1 == normal speed
 	float playbackTime = 0.0f;
 
-	void PlayClip() {
-		if(clip == NULL) { return; }
+	void PlayClip(float dt) {
+		if(clip == NULL || target == NULL) { return; }
 		if(isPlaying) {
+			playbackTime += dt * playbackSpeed;
+			if(playbackTime > clip->duration) {
+				if(isLooping) { playbackTime = 0; }
+				else {
+					playbackTime = clip->duration;
+					return;
+				}
+			}
 
+			// TODO: deal with negative playback speed
 
-			for(int i = 0; i < clip->posKeys.size(); i++) {
+			// scale
+			for(int i = 0; i < clip->scaKeys.size(); i++) { // 0 keyframes case is skipped
+				if(clip->scaKeys[i].time >= playbackTime) {
+					// first keyframe case
+					if(i == 0) { target->scale = clip->scaKeys[0].values; }
+
+					else {
+						float lerpPercent = Util::InvLerp(clip->scaKeys[i - 1].time, clip->scaKeys[i].time, playbackTime);
+						target->scale = Util::Lerp3(clip->scaKeys[i - 1].values, clip->scaKeys[i].values, lerpPercent);
+					}
+
+					i = clip->scaKeys.size();
+				}
+			}
+
+			// rotation
+			for(int i = 0; i < clip->rotKeys.size(); i++) { // 0 keyframes case is skipped
+				if(clip->rotKeys[i].time >= playbackTime) {
+					// first keyframe case
+					if(i == 0) { target->rotation = glm::quat(glm::radians(clip->rotKeys[0].values)); }
+
+					else {
+						float lerpPercent = Util::InvLerp(clip->rotKeys[i - 1].time, clip->rotKeys[i].time, playbackTime);
+
+						glm::quat rot1AsQuat(glm::radians(clip->rotKeys[i - 1].values));
+						glm::quat rot2AsQuat(glm::radians(clip->rotKeys[i].values));
+
+						// TODO: actual rotation lerping
+					}
+
+					i = clip->rotKeys.size();
+				}
+			}
+
+			// position
+			for(int i = 0; i < clip->posKeys.size(); i++) { // 0 keyframes case is skipped
 				if(clip->posKeys[i].time >= playbackTime) {
-					float betweenPercent = InvLerp(clip->posKeys[i - 1].time, clip->posKeys[i].time, playbackTime);
-					std::vector<float> lerpedPos = Lerp3(clip->posKeys[i].values, clip->posKeys[i].values, betweenPercent);
-					target->position.x = lerpedPos[0];
-					target->position.y = lerpedPos[1];
-					target->position.z = lerpedPos[2];
+					// first keyframe case
+					if(i == 0) { target->position = clip->posKeys[0].values; }
+
+					else {
+						float lerpPercent = Util::InvLerp(clip->posKeys[i - 1].time, clip->posKeys[i].time, playbackTime);
+						target->position = Util::Lerp3(clip->posKeys[i - 1].values, clip->posKeys[i].values, lerpPercent);
+					}
+
+					i = clip->posKeys.size();
 				}
 			}
 		}
+
+		return;
 	}
-
-	// returns a vector with 3 elements
-	// function will crash program if A and B do not have at least 3 elements (lol)
-	std::vector<float> Lerp3(const float* const A, const float* const B, float t) {
-		// clamp percentage
-		if(t < 0) { t = 0.0f; }
-		else if(t > 1) { t = 1.0f; }
-
-		std::vector<float> output;
-		output.push_back(((1.0f - t) * A[0]) + (t * B[0]));
-		output.push_back(((1.0f - t) * A[1]) + (t * B[1]));
-		output.push_back(((1.0f - t) * A[2]) + (t * B[2]));
-
-		return output;
-	}
-
-	float InvLerp(float A, float B, float x) { return (x - A) / (B - A); }
 };
