@@ -106,6 +106,8 @@ int main() {
 		camera.aspectRatio = (float)screenWidth / screenHeight; // it's not inside framebufferSizeCallback, but it'll do
 		cameraController.move(window, &camera, deltaTime); // cam control before actually using camera for anything
 
+		// play animation clip
+		animator.PlayClip(deltaTime);
 		// Rotate model around Y axis
 		//monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
 
@@ -115,8 +117,6 @@ int main() {
 		// clear scene
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		animator.PlayClip(deltaTime);
 
 		// ----- 1) render depth of scene to texture (from light's perspective) ----- //
 
@@ -381,9 +381,11 @@ void drawUI() {
 	if(ImGui::CollapsingHeader("Animation")) {
 		ImGui::Checkbox("Playing", &animator.isPlaying);
 		ImGui::Checkbox("Looping", &animator.isLooping);
-		ImGui::DragFloat("Playback Speed", &animator.playbackSpeed);
+		ImGui::DragFloat("Playback Speed", &animator.playbackSpeed, 0.01f);
 		ImGui::SliderFloat("Playback Time", &animator.playbackTime, 0.0f, animator.clip->duration);
-		ImGui::DragFloat("Clip Duration", &animator.clip->duration, 0.1f, 0.0f);
+		ImGui::DragFloat("Clip Duration", &animator.clip->duration, 0.01f, 0.0f, 60.0f);
+			// 1 minute max clip duration for no particular reason except
+			// that DragFloat min doesn't work if i don't specify a max
 	}
 
 	int id = 0;
@@ -392,63 +394,51 @@ void drawUI() {
 			ImGui::PushID(id);
 			id++;
 
-			std::string text = "Position " + std::to_string(i);
+			std::string text = "Position " + std::to_string(i + 1);
 			ImGui::Text(text.data());
 			ImGui::SliderFloat("Time", &animator.clip->posKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->posKeys[i].values.x, 0.1f);
+			ImGui::DragFloat3("Values", &animator.clip->posKeys[i].values.x, 0.01f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();
 		}
 
-		if(ImGui::Button("Add keyframe")) {
-			animator.clip->AddKeyframe(POS);
-		}
-		if(ImGui::Button("Remove last keyframe")) {
-			animator.clip->RemoveLastKeyframe(POS);
-		}
+		if(ImGui::Button("Add keyframe##-1")) { animator.clip->AddKeyframe(POS); }
+		if(ImGui::Button("Remove last keyframe##-1")) { animator.clip->RemoveLastKeyframe(POS); }
 	}
 	if(ImGui::CollapsingHeader("Rotation Keyframes")) {
 		for(int i = 0; i < animator.clip->rotKeys.size(); i++) {
 			ImGui::PushID(id);
 			id++;
 
-			std::string text = "Rotation " + std::to_string(i);
+			std::string text = "Rotation " + std::to_string(i + 1);
 			ImGui::Text(text.data());
 			ImGui::SliderFloat("Time", &animator.clip->rotKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->rotKeys[i].values.x, 0.1f);
+			ImGui::DragFloat3("Values", &animator.clip->rotKeys[i].values.x, 0.01f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();
 		}
 
-		if(ImGui::Button("Add keyframe")) {
-			animator.clip->AddKeyframe(ROT);
-		}
-		if(ImGui::Button("Remove last keyframe")) {
-			animator.clip->RemoveLastKeyframe(ROT);
-		}
+		if(ImGui::Button("Add keyframe##-2")) { animator.clip->AddKeyframe(ROT); }
+		if(ImGui::Button("Remove last keyframe##-2")) { animator.clip->RemoveLastKeyframe(ROT); }
 	}
 	if(ImGui::CollapsingHeader("Scale Keyframes")) {
 		for(int i = 0; i < animator.clip->scaKeys.size(); i++) {
 			ImGui::PushID(id);
 			id++;
 
-			std::string text = "Scale " + std::to_string(i);
+			std::string text = "Scale " + std::to_string(i + 1);
 			ImGui::Text(text.data());
 			ImGui::SliderFloat("Time", &animator.clip->scaKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->scaKeys[i].values.x, 0.1f);
+			ImGui::DragFloat3("Values", &animator.clip->scaKeys[i].values.x, 0.01f);
 			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
 
 			ImGui::PopID();
 		}
 
-		if(ImGui::Button("Add keyframe")) {
-			animator.clip->AddKeyframe(SCA);
-		}
-		if(ImGui::Button("Remove last keyframe")) {
-			animator.clip->RemoveLastKeyframe(SCA);
-		}
+		if(ImGui::Button("Add keyframe##-3")) { animator.clip->AddKeyframe(SCA); }
+		if(ImGui::Button("Remove last keyframe##-3")) { animator.clip->RemoveLastKeyframe(SCA); }
 	}
 
 	ImGui::Begin("Shadow Map");

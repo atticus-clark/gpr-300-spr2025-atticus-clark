@@ -1,5 +1,5 @@
 #include <vector>
-#include <cmath>
+#include <ew/external/glad.h>
 #include <ew/transform.h>
 
 static class Util {
@@ -103,9 +103,20 @@ public:
 	float playbackTime = 0.0f;
 
 	void PlayClip(float dt) {
-		if(clip == NULL || target == NULL) { return; }
-		if(isPlaying) {
-			playbackTime += dt * playbackSpeed;
+		if(clip == NULL || target == NULL || !isPlaying || playbackSpeed == 0) { return; }
+		playbackTime += dt * playbackSpeed;
+
+		// if at end/beginning of clip (normal/reverse playback), loop or early exit
+		if(playbackSpeed < 0) {
+			if(playbackTime < 0) {
+				if(isLooping) { playbackTime = clip->duration; }
+				else {
+					playbackTime = 0;
+					return;
+				}
+			}
+		}
+		else {
 			if(playbackTime > clip->duration) {
 				if(isLooping) { playbackTime = 0; }
 				else {
@@ -113,56 +124,54 @@ public:
 					return;
 				}
 			}
+		}
 
-			// TODO: deal with negative playback speed
+		// scale
+		for(int i = 0; i < clip->scaKeys.size(); i++) { // 0 keyframes case is skipped
+			if(clip->scaKeys[i].time >= playbackTime) {
+				// first keyframe case
+				if(i == 0) { target->scale = clip->scaKeys[0].values; }
 
-			// scale
-			for(int i = 0; i < clip->scaKeys.size(); i++) { // 0 keyframes case is skipped
-				if(clip->scaKeys[i].time >= playbackTime) {
-					// first keyframe case
-					if(i == 0) { target->scale = clip->scaKeys[0].values; }
-
-					else {
-						float lerpPercent = Util::InvLerp(clip->scaKeys[i - 1].time, clip->scaKeys[i].time, playbackTime);
-						target->scale = Util::Lerp3(clip->scaKeys[i - 1].values, clip->scaKeys[i].values, lerpPercent);
-					}
-
-					i = clip->scaKeys.size();
+				else {
+					float lerpPercent = Util::InvLerp(clip->scaKeys[i - 1].time, clip->scaKeys[i].time, playbackTime);
+					target->scale = Util::Lerp3(clip->scaKeys[i - 1].values, clip->scaKeys[i].values, lerpPercent);
 				}
+
+				i = clip->scaKeys.size();
 			}
+		}
 
-			// rotation
-			for(int i = 0; i < clip->rotKeys.size(); i++) { // 0 keyframes case is skipped
-				if(clip->rotKeys[i].time >= playbackTime) {
-					// first keyframe case
-					if(i == 0) { target->rotation = glm::quat(glm::radians(clip->rotKeys[0].values)); }
+		// rotation
+		for(int i = 0; i < clip->rotKeys.size(); i++) { // 0 keyframes case is skipped
+			if(clip->rotKeys[i].time >= playbackTime) {
+				// first keyframe case
+				if(i == 0) { target->rotation = glm::quat(glm::radians(clip->rotKeys[0].values)); }
 
-					else {
-						float lerpPercent = Util::InvLerp(clip->rotKeys[i - 1].time, clip->rotKeys[i].time, playbackTime);
+				else {
+					float lerpPercent = Util::InvLerp(clip->rotKeys[i - 1].time, clip->rotKeys[i].time, playbackTime);
 
-						glm::quat rot1AsQuat(glm::radians(clip->rotKeys[i - 1].values));
-						glm::quat rot2AsQuat(glm::radians(clip->rotKeys[i].values));
+					glm::quat rot1AsQuat(glm::radians(clip->rotKeys[i - 1].values));
+					glm::quat rot2AsQuat(glm::radians(clip->rotKeys[i].values));
 
-						// TODO: actual rotation lerping
-					}
-
-					i = clip->rotKeys.size();
+					target->rotation = glm::slerp(rot1AsQuat, rot2AsQuat, lerpPercent);
 				}
+
+				i = clip->rotKeys.size();
 			}
+		}
 
-			// position
-			for(int i = 0; i < clip->posKeys.size(); i++) { // 0 keyframes case is skipped
-				if(clip->posKeys[i].time >= playbackTime) {
-					// first keyframe case
-					if(i == 0) { target->position = clip->posKeys[0].values; }
+		// position
+		for(int i = 0; i < clip->posKeys.size(); i++) { // 0 keyframes case is skipped
+			if(clip->posKeys[i].time >= playbackTime) {
+				// first keyframe case
+				if(i == 0) { target->position = clip->posKeys[0].values; }
 
-					else {
-						float lerpPercent = Util::InvLerp(clip->posKeys[i - 1].time, clip->posKeys[i].time, playbackTime);
-						target->position = Util::Lerp3(clip->posKeys[i - 1].values, clip->posKeys[i].values, lerpPercent);
-					}
-
-					i = clip->posKeys.size();
+				else {
+					float lerpPercent = Util::InvLerp(clip->posKeys[i - 1].time, clip->posKeys[i].time, playbackTime);
+					target->position = Util::Lerp3(clip->posKeys[i - 1].values, clip->posKeys[i].values, lerpPercent);
 				}
+
+				i = clip->posKeys.size();
 			}
 		}
 
