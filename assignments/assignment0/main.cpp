@@ -297,25 +297,25 @@ void drawUI() {
 	}
 
 	if(ImGui::CollapsingHeader("Left Hand")) {
-		ImGui::DragFloat3("Scale##4", &skeleton.a_localPoses[4].scale[0], 0.01f);
+		ImGui::DragFloat3("Scale##4", &skeleton.a_localPoses[4].scale[0], 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat3("Rotation##4", &skeleton.a_localPoses[4].rotation[0], 0.1f, -180.0f, 180.0f);
 		ImGui::DragFloat3("Position##4", &skeleton.a_localPoses[4].position[0], 0.01f);
 	}
 
 	if(ImGui::CollapsingHeader("Right Shoulder")) {
-		ImGui::DragFloat3("Scale##5", &skeleton.a_localPoses[5].scale[0], 0.01f);
+		ImGui::DragFloat3("Scale##5", &skeleton.a_localPoses[5].scale[0], 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat3("Rotation##5", &skeleton.a_localPoses[5].rotation[0], 0.1f, -180.0f, 180.0f);
 		ImGui::DragFloat3("Position##5", &skeleton.a_localPoses[5].position[0], 0.01f);
 	}
 
 	if(ImGui::CollapsingHeader("Right Arm")) {
-		ImGui::DragFloat3("Scale##6", &skeleton.a_localPoses[6].scale[0], 0.01f);
+		ImGui::DragFloat3("Scale##6", &skeleton.a_localPoses[6].scale[0], 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat3("Rotation##6", &skeleton.a_localPoses[6].rotation[0], 0.1f, -180.0f, 180.0f);
 		ImGui::DragFloat3("Position##6", &skeleton.a_localPoses[6].position[0], 0.01f);
 	}
 
 	if(ImGui::CollapsingHeader("Right Hand")) {
-		ImGui::DragFloat3("Scale##7", &skeleton.a_localPoses[7].scale[0], 0.01f);
+		ImGui::DragFloat3("Scale##7", &skeleton.a_localPoses[7].scale[0], 0.01f, 0.0f, 10.0f);
 		ImGui::DragFloat3("Rotation##7", &skeleton.a_localPoses[7].rotation[0], 0.1f, -180.0f, 180.0f);
 		ImGui::DragFloat3("Position##7", &skeleton.a_localPoses[7].position[0], 0.01f);
 	}
