@@ -1,5 +1,4 @@
 #pragma once
-#include <math.h>
 #include <ew/transform.h>
 
 struct Joint {
