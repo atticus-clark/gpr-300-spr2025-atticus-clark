@@ -16,6 +16,7 @@
 #include <ew/texture.h>
 
 #include "anim.h"
+#include "kinematics.h"
 
 GLFWwindow* initWindow(const char* title, int width, int height);
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
@@ -26,6 +27,8 @@ void setupPlane(unsigned int& planeVBO, unsigned int& planeVAO);
 void setupDepthMap(unsigned int& depthMapFBO, unsigned int& depthMap);
 void renderQuad();
 void renderScene(const ew::Shader& shader, ew::Model& monkeyModel);
+
+void InitSkeleton(Skeleton& hierarchy);
 
 struct Material {
 	float Ka = 1.0;
@@ -44,13 +47,16 @@ Material material;
 
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 unsigned int planeVAO;
-ew::Transform monkeyTransform;
 
 float lightPos[3] = { 1.0f, 5.0f, 1.0f };
 float lightColor[3] = { 1.0f, 1.0f, 1.0f };
 float maxBias = 0.05, minBias = 0.005;
 
-Animator animator;
+//Animator animator;
+
+const unsigned int NUM_OBJS = 8;
+ew::Transform transforms[NUM_OBJS];
+Skeleton skeleton;
 
 int main() {
 	GLFWwindow* window = initWindow("Assignment 4", screenWidth, screenHeight);
@@ -70,13 +76,10 @@ int main() {
 	// shaders setup
 	ew::Shader mainShader = ew::Shader("assets/shaders/lit.vert", "assets/shaders/lit.frag");
 	ew::Shader simpleDepthShader = ew::Shader("assets/shaders/shadow.vert", "assets/shaders/shadow.frag");
-	ew::Shader debugDepthQuad = ew::Shader("assets/shaders/debugDepthQuad.vert", "assets/shaders/debugDepthQuad.frag");
 
 	mainShader.use();
 	mainShader.setInt("_DiffuseTexture", 0);
 	mainShader.setInt("_ShadowMap", 1);
-	debugDepthQuad.use();
-	debugDepthQuad.setInt("_DepthMap", 0);
 
 	// shadow map setup
 	unsigned int depthMapFBO, depthMap;
@@ -87,15 +90,11 @@ int main() {
 	setupPlane(planeVBO, planeVAO);
 
 	ew::Model monkeyModel = ew::Model("assets/suzanne.obj");
-	// Handles to OpenGL object are unsigned integers
 	GLuint monkeyTexture = ew::loadTexture("assets/PavingStones143_1K-JPG_Color.jpg");
-		//GLuint brickTexture = ew::loadTexture("assets/brick_color.jpg");
+	glBindTextureUnit(0, monkeyTexture); // Bind brick texture to texture unit 0
 
-	// animation setup
-	animator.clip = new AnimationClip;
-	animator.target = &monkeyTransform;
+	InitSkeleton(skeleton);
 
-	// render loop //
 	while(!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 		float time = (float)glfwGetTime();
@@ -104,19 +103,20 @@ int main() {
 
 		// update camera (aspect ratio & position)
 		camera.aspectRatio = (float)screenWidth / screenHeight; // it's not inside framebufferSizeCallback, but it'll do
-		cameraController.move(window, &camera, deltaTime); // cam control before actually using camera for anything
-
-		// play animation clip
-		animator.PlayClip(deltaTime);
-		// Rotate model around Y axis
-		//monkeyTransform.rotation = glm::rotate(monkeyTransform.rotation, deltaTime, glm::vec3(0.0, 1.0, 0.0));
-
-		// Bind brick texture to texture unit 0
-		glBindTextureUnit(0, monkeyTexture);
+		cameraController.move(window, &camera, deltaTime); // cam control before actually using camera for rendering
 
 		// clear scene
 		glClearColor(0.6f, 0.8f, 0.92f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		// update transforms based on skeleton
+		SolveFK(skeleton);
+		for(int i = 0; i < NUM_OBJS; i++) {
+			JointPose pose = UndoTransformMatrix(skeleton.a_globalPoses[i]);
+			transforms[i].scale = pose.scale;
+			transforms[i].rotation = glm::quat(glm::radians(pose.rotation));
+			transforms[i].position = pose.position;
+		}
 
 		// ----- 1) render depth of scene to texture (from light's perspective) ----- //
 
@@ -147,7 +147,7 @@ int main() {
 		// reset viewport
 		glViewport(0, 0, screenWidth, screenHeight);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		
+
 		// ----- 2) render scene as normal using the generated depth/shadow map ----- //
 		mainShader.use();
 		mainShader.setMat4("_ViewProjection", camera.projectionMatrix() * camera.viewMatrix());
@@ -166,27 +166,164 @@ int main() {
 		glBindTexture(GL_TEXTURE_2D, depthMap);
 		renderScene(mainShader, monkeyModel);
 
-		/*
-		// render depth map to quad for visual debugging
-		debugDepthQuad.use();
-		debugDepthQuad.setFloat("_NearPlane", near_plane);
-		debugDepthQuad.setFloat("_FarPlane", far_plane);
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, depthMap);
-		glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-		renderQuad();
-		*/
-
 		drawUI();
 
 		glfwSwapBuffers(window);
 	}
 
-	delete animator.clip;
-	//delete animator.target; // can't delete monkeyTransform (not created with new)
 	glfwTerminate();
 	printf("\nShutting down...");
 	return 0;
+}
+
+//--------------- assignment 6 functions --------------- //
+
+void InitSkeleton(Skeleton& hierarchy) {
+	// ---------- create arrays ---------- //
+	hierarchy.numJoints = NUM_OBJS;
+	hierarchy.a_joints = new Joint[NUM_OBJS];
+	hierarchy.a_localPoses = new JointPose[NUM_OBJS];
+	hierarchy.a_globalPoses = new glm::mat4[NUM_OBJS];
+
+	// ---------- names & parents ---------- //
+	hierarchy.a_joints[0].name = "Torso";
+	hierarchy.a_joints[1].name = "Head";
+	hierarchy.a_joints[2].name = "Left Shoulder";
+	hierarchy.a_joints[3].name = "Left Arm";
+	hierarchy.a_joints[4].name = "Left Hand";
+	hierarchy.a_joints[5].name = "Right Shoulder";
+	hierarchy.a_joints[6].name = "Right Arm";
+	hierarchy.a_joints[7].name = "Right Hand";
+
+	hierarchy.a_joints[1].parentIndex = 0; // Head parent: Torso
+	hierarchy.a_joints[2].parentIndex = 0; // Left Shoulder parent: Torso
+	hierarchy.a_joints[3].parentIndex = 2; // Left Arm parent: Left Shoulder
+	hierarchy.a_joints[4].parentIndex = 3; // Left Hand parent: Left Arm
+	hierarchy.a_joints[5].parentIndex = 0; // Right Shoulder parent: Torso
+	hierarchy.a_joints[6].parentIndex = 5; // Right Arm parent: Right Shoulder
+	hierarchy.a_joints[7].parentIndex = 6; // Right Hand parent: Right Arm
+	
+	// ---------- local poses ---------- //
+	hierarchy.a_localPoses[0].scale = glm::vec3(1.0f, 1.0f, 1.0f);
+	hierarchy.a_localPoses[0].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[0].position = glm::vec3(0.0f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[1].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[1].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[1].position = glm::vec3(0.0f, 2.0f, 0.0f);
+
+	hierarchy.a_localPoses[2].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[2].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[2].position = glm::vec3(-2.0f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[3].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[3].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[3].position = glm::vec3(-1.0f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[4].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[4].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[4].position = glm::vec3(-0.5f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[5].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[5].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[5].position = glm::vec3(2.0f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[6].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[6].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[6].position = glm::vec3(1.0f, 0.0f, 0.0f);
+
+	hierarchy.a_localPoses[7].scale = glm::vec3(0.5f, 0.5f, 0.5f);
+	hierarchy.a_localPoses[7].rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+	hierarchy.a_localPoses[7].position = glm::vec3(0.5f, 0.0f, 0.0f);
+}
+
+void renderScene(const ew::Shader& shader, ew::Model& monkeyModel) {
+	// floor //
+	glm::mat4 model = glm::mat4(1.0f);
+	shader.setMat4("_Model", model);
+
+	shader.setInt("_MainTex", 0);
+	shader.setFloat("_Material.Ka", material.Ka);
+	shader.setFloat("_Material.Kd", 0.5f);
+	shader.setFloat("_Material.Ks", 0.0f);
+	shader.setFloat("_Material.Shininess", 0.0f);
+
+	glBindVertexArray(planeVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+
+	// monkeys //
+	//shader.setInt("_MainTex", 0);
+	//shader.setFloat("_Material.Ka", material.Ka);
+	shader.setFloat("_Material.Kd", material.Kd);
+	shader.setFloat("_Material.Ks", material.Ks);
+	shader.setFloat("_Material.Shininess", material.Shininess);
+
+	for(int i = 0; i < NUM_OBJS; i++) {
+		// transform.modelMatrix() combines translation, rotation, and scale into a 4x4 model matrix
+		shader.setMat4("_Model", transforms[i].modelMatrix());
+		monkeyModel.draw();
+	}
+}
+
+void drawUI() {
+	ImGui_ImplGlfw_NewFrame();
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::Begin("Skeleton");
+
+	if(ImGui::CollapsingHeader("Torso")) {
+		ImGui::DragFloat3("Scale##0", &skeleton.a_localPoses[0].scale[0], 0.01f, 0.0f, 10.0f);
+		ImGui::DragFloat3("Rotation##0", &skeleton.a_localPoses[0].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##0", &skeleton.a_localPoses[0].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Head")) {
+		ImGui::DragFloat3("Scale##1", &skeleton.a_localPoses[1].scale[0], 0.01f, 0.0f, 10.0f);
+		ImGui::DragFloat3("Rotation##1", &skeleton.a_localPoses[1].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##1", &skeleton.a_localPoses[1].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Left Shoulder")) {
+		ImGui::DragFloat3("Scale##2", &skeleton.a_localPoses[2].scale[0], 0.01f, 0.0f, 10.0f);
+		ImGui::DragFloat3("Rotation##2", &skeleton.a_localPoses[2].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##2", &skeleton.a_localPoses[2].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Left Arm")) {
+		ImGui::DragFloat3("Scale##3", &skeleton.a_localPoses[3].scale[0], 0.01f, 0.0f, 10.0f);
+		ImGui::DragFloat3("Rotation##3", &skeleton.a_localPoses[3].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##3", &skeleton.a_localPoses[3].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Left Hand")) {
+		ImGui::DragFloat3("Scale##4", &skeleton.a_localPoses[4].scale[0], 0.01f);
+		ImGui::DragFloat3("Rotation##4", &skeleton.a_localPoses[4].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##4", &skeleton.a_localPoses[4].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Right Shoulder")) {
+		ImGui::DragFloat3("Scale##5", &skeleton.a_localPoses[5].scale[0], 0.01f);
+		ImGui::DragFloat3("Rotation##5", &skeleton.a_localPoses[5].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##5", &skeleton.a_localPoses[5].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Right Arm")) {
+		ImGui::DragFloat3("Scale##6", &skeleton.a_localPoses[6].scale[0], 0.01f);
+		ImGui::DragFloat3("Rotation##6", &skeleton.a_localPoses[6].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##6", &skeleton.a_localPoses[6].position[0], 0.01f);
+	}
+
+	if(ImGui::CollapsingHeader("Right Hand")) {
+		ImGui::DragFloat3("Scale##7", &skeleton.a_localPoses[7].scale[0], 0.01f);
+		ImGui::DragFloat3("Rotation##7", &skeleton.a_localPoses[7].rotation[0], 0.1f, -180.0f, 180.0f);
+		ImGui::DragFloat3("Position##7", &skeleton.a_localPoses[7].position[0], 0.01f);
+	}
+
+	ImGui::End();
+
+	ImGui::Render();
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 // --------------- assignment 2 functions --------------- //
@@ -274,33 +411,6 @@ void renderQuad() { // renders a 1x1 XY quad in NDC
 	glBindVertexArray(0);
 }
 
-void renderScene(const ew::Shader& shader, ew::Model& monkeyModel) {
-	// floor //
-	glm::mat4 model = glm::mat4(1.0f);
-	shader.setMat4("_Model", model);
-
-	shader.setInt("_MainTex", 0);
-	shader.setFloat("_Material.Ka", material.Ka);
-	shader.setFloat("_Material.Kd", 0.5f);
-	shader.setFloat("_Material.Ks", 0.0f);
-	shader.setFloat("_Material.Shininess", 0.0f);
-
-	glBindVertexArray(planeVAO);
-	glDrawArrays(GL_TRIANGLES, 0, 6);
-
-	// monkey //
-	// transform.modelMatrix() combines translation, rotation, and scale into a 4x4 model matrix
-	shader.setMat4("_Model", monkeyTransform.modelMatrix());
-
-	shader.setInt("_MainTex", 0);
-	shader.setFloat("_Material.Ka", material.Ka);
-	shader.setFloat("_Material.Kd", material.Kd);
-	shader.setFloat("_Material.Ks", material.Ks);
-	shader.setFloat("_Material.Shininess", material.Shininess);
-
-	monkeyModel.draw();
-}
-
 // --------------- assignment 0 functions --------------- //
 
 /// <summary>
@@ -348,112 +458,4 @@ void resetCamera(ew::Camera* camera, ew::CameraController* controller) {
 	camera->position = glm::vec3(0, 0, 5.0f);
 	camera->target = glm::vec3(0);
 	controller->yaw = controller->pitch = 0;
-}
-
-void drawUI() {
-	ImGui_ImplGlfw_NewFrame();
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui::NewFrame();
-
-	ImGui::Begin("Settings");
-
-	if(ImGui::Button("Reset Camera")) { resetCamera(&camera, &cameraController); }
-	if(ImGui::CollapsingHeader("Material")) {
-		ImGui::SliderFloat("AmbientK", &material.Ka, 0.0f, 1.0f);
-		ImGui::SliderFloat("DiffuseK", &material.Kd, 0.0f, 1.0f);
-		ImGui::SliderFloat("SpecularK", &material.Ks, 0.0f, 1.0f);
-		ImGui::SliderFloat("Shininess", &material.Shininess, 2.0f, 1024.0f);
-	}
-	if(ImGui::CollapsingHeader("Directional Light")) {
-		ImGui::ColorEdit3("Color", lightColor);
-		ImGui::SliderFloat("Light Pos X", &lightPos[0], -5.0f, 5.0f);
-		ImGui::SliderFloat("Light Pos Y", &lightPos[1], 3.0f, 10.0f);
-		ImGui::SliderFloat("Light Pos Z", &lightPos[2], -5.0f, 5.0f);
-	}
-	if(ImGui::CollapsingHeader("Shadow")) {
-		ImGui::SliderFloat("Max Bias", &maxBias, 0.05, 0.2);
-		ImGui::SliderFloat("Min Bias", &minBias, 0.001, maxBias);
-	}
-
-	// animation stuff (assignment 4)
-	animator.clip->EnsureAscendingTimes();
-
-	if(ImGui::CollapsingHeader("Animation")) {
-		ImGui::Checkbox("Playing", &animator.isPlaying);
-		ImGui::Checkbox("Looping", &animator.isLooping);
-		ImGui::DragFloat("Playback Speed", &animator.playbackSpeed, 0.01f);
-		ImGui::SliderFloat("Playback Time", &animator.playbackTime, 0.0f, animator.clip->duration);
-		ImGui::DragFloat("Clip Duration", &animator.clip->duration, 0.01f, 0.0f, 60.0f);
-			// 1 minute max clip duration for no particular reason except
-			// that DragFloat min doesn't work if i don't specify a max
-	}
-
-	int id = 0;
-	if(ImGui::CollapsingHeader("Position Keyframes")) {
-		for(int i = 0; i < animator.clip->posKeys.size(); i++) {
-			ImGui::PushID(id);
-			id++;
-
-			std::string text = "Position " + std::to_string(i + 1);
-			ImGui::Text(text.data());
-			ImGui::SliderFloat("Time", &animator.clip->posKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->posKeys[i].values.x, 0.01f);
-			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
-
-			ImGui::PopID();
-		}
-
-		if(ImGui::Button("Add keyframe##-1")) { animator.clip->AddKeyframe(POS); }
-		if(ImGui::Button("Remove last keyframe##-1")) { animator.clip->RemoveLastKeyframe(POS); }
-	}
-	if(ImGui::CollapsingHeader("Rotation Keyframes")) {
-		for(int i = 0; i < animator.clip->rotKeys.size(); i++) {
-			ImGui::PushID(id);
-			id++;
-
-			std::string text = "Rotation " + std::to_string(i + 1);
-			ImGui::Text(text.data());
-			ImGui::SliderFloat("Time", &animator.clip->rotKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->rotKeys[i].values.x, 0.01f);
-			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
-
-			ImGui::PopID();
-		}
-
-		if(ImGui::Button("Add keyframe##-2")) { animator.clip->AddKeyframe(ROT); }
-		if(ImGui::Button("Remove last keyframe##-2")) { animator.clip->RemoveLastKeyframe(ROT); }
-	}
-	if(ImGui::CollapsingHeader("Scale Keyframes")) {
-		for(int i = 0; i < animator.clip->scaKeys.size(); i++) {
-			ImGui::PushID(id);
-			id++;
-
-			std::string text = "Scale " + std::to_string(i + 1);
-			ImGui::Text(text.data());
-			ImGui::SliderFloat("Time", &animator.clip->scaKeys[i].time, 0.0f, animator.clip->duration);
-			ImGui::DragFloat3("Values", &animator.clip->scaKeys[i].values.x, 0.01f);
-			// TODO: dropdown (ImGui::Combo) for easing function (extra credit)
-
-			ImGui::PopID();
-		}
-
-		if(ImGui::Button("Add keyframe##-3")) { animator.clip->AddKeyframe(SCA); }
-		if(ImGui::Button("Remove last keyframe##-3")) { animator.clip->RemoveLastKeyframe(SCA); }
-	}
-
-	ImGui::Begin("Shadow Map");
-	//Using a Child allow to fill all the space of the window.
-	ImGui::BeginChild("Shadow Map");
-	//Stretch image to be window size
-	ImVec2 windowSize = ImGui::GetWindowSize();
-	//Invert 0-1 V to flip vertically for ImGui display
-	//shadowMap is the texture2D handle
-	ImGui::Image((ImTextureID)planeVAO, windowSize, ImVec2(0, 1), ImVec2(1, 0));
-	ImGui::EndChild();
-	ImGui::End();
-
-	ImGui::End();
-
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

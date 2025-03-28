@@ -15,7 +15,7 @@ ${CMAKE_CURRENT_SOURCE_DIR}/assets/
 ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets/)
 
 install(FILES ${ASSIGNMENT0_INC} DESTINATION include/assignment0)
-add_executable(assignment0 ${ASSIGNMENT0_SRC} ${ASSIGNMENT0_INC}  "anim.h")
+add_executable(assignment0 ${ASSIGNMENT0_SRC} ${ASSIGNMENT0_INC}  "anim.h" "kinematics.h")
 target_link_libraries(assignment0 PUBLIC core IMGUI assimp)
 target_include_directories(assignment0 PUBLIC ${CORE_INC_DIR} ${stb_INCLUDE_DIR})
 
